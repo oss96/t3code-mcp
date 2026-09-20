@@ -1,0 +1,43 @@
+{
+  "name": "t3code-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Small Bun MCP server (stdio, Streamable HTTP, and SSE) that lets coding agents start and drive T3 Code threads through the running T3 server.",
+  "license": "MIT",
+  "bin": {
+    "t3code-mcp": "./src/cli.ts"
+  },
+  "type": "module",
+  "scripts": {
+    "start": "bun run src/cli.ts serve",
+    "start:stdio": "bun run src/cli.ts serve --transport stdio",
+    "start:http": "bun run src/cli.ts serve --transport http",
+    "start:sse": "bun run src/cli.ts serve --transport sse",
+    "pair": "bun run src/cli.ts pair",
+    "status": "bun run src/cli.ts status",
+    "lint": "oxlint --type-aware --deny-warnings --report-unused-disable-directives-severity error .",
+    "lint:fix": "bun run lint --fix",
+    "format": "oxfmt --write .",
+    "format:check": "oxfmt --check .",
+    "check": "bun run format:check && bun run lint && bun run typecheck && bun test",
+    "test": "bun test",
+    "test:docker": "bun run scripts/smoke-docker.ts",
+    "test:live": "bun run scripts/smoke-live.ts",
+    "typecheck": "bunx tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/server": "2",
+    "zod": "^4"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/client": "2",
+    "@types/bun": "^1.4.2",
+    "oxfmt": "^0.68.0",
+    "oxlint": "^1.83.0",
+    "oxlint-tsgolint": "^7.0.2002",
+    "typescript": "^7.0.2"
+  },
+  "engines": {
+    "bun": ">=1.2"
+  }
+}

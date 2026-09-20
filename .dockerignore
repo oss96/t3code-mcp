@@ -1,0 +1,7 @@
+# Only runtime source and dependency manifests belong in the build context.
+**
+!package.json
+!bun.lock
+!LICENSE
+!src/
+!src/**
