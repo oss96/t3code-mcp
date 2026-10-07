@@ -6,7 +6,7 @@ import { READ_ONLY, registerJsonTool, type ClientSource } from "../register-tool
 
 export function registerProjectTools(server: McpServer, source: ClientSource): void {
   registerJsonTool(
-    server,
+    { server, source },
     "t3_list_projects",
     {
       title: "List T3 projects",
@@ -28,7 +28,7 @@ export function registerProjectTools(server: McpServer, source: ClientSource): v
   );
 
   registerJsonTool(
-    server,
+    { server, source },
     "t3_list_worktrees",
     {
       title: "List worktrees of a project",

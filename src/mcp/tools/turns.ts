@@ -17,7 +17,7 @@ import {
 
 export function registerTurnTools(server: McpServer, source: ClientSource): void {
   registerJsonTool(
-    server,
+    { server, source },
     "t3_send_message",
     {
       title: "Send a follow-up prompt",
@@ -75,7 +75,7 @@ export function registerTurnTools(server: McpServer, source: ClientSource): void
   );
 
   registerJsonTool(
-    server,
+    { server, source },
     "t3_wait_for_turn",
     {
       title: "Wait for the current turn",
@@ -98,7 +98,7 @@ export function registerTurnTools(server: McpServer, source: ClientSource): void
   );
 
   registerJsonTool(
-    server,
+    { server, source },
     "t3_cancel_turn",
     {
       title: "Cancel the running turn",

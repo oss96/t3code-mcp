@@ -6,7 +6,7 @@ import { READ_ONLY, registerJsonTool, type ClientSource } from "../register-tool
 
 export function registerHarnessTools(server: McpServer, source: ClientSource): void {
   registerJsonTool(
-    server,
+    { server, source },
     "t3_list_harnesses",
     {
       title: "List harnesses and models",

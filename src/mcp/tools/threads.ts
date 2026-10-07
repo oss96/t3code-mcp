@@ -22,7 +22,7 @@ import {
 
 export function registerThreadTools(server: McpServer, source: ClientSource): void {
   registerJsonTool(
-    server,
+    { server, source },
     "t3_list_threads",
     {
       title: "List threads",
@@ -48,7 +48,7 @@ export function registerThreadTools(server: McpServer, source: ClientSource): vo
   );
 
   registerJsonTool(
-    server,
+    { server, source },
     "t3_create_thread",
     {
       title: "Create a T3 thread and send the first prompt",
@@ -167,7 +167,7 @@ export function registerThreadTools(server: McpServer, source: ClientSource): vo
   );
 
   registerJsonTool(
-    server,
+    { server, source },
     "t3_get_thread",
     {
       title: "Read a thread",

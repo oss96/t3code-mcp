@@ -97,6 +97,7 @@ describe("credential store", () => {
     expect(await resolveAccessToken("http://a", {}, dir)).toEqual({
       token: "legacy-token",
       source: legacy,
+      expiresAt: base.expiresAt,
     });
     await expect(
       resolveAccessToken("http://a", { T3CODE_MCP_CREDENTIALS: current }, dir),
@@ -105,6 +106,7 @@ describe("credential store", () => {
     expect(await resolveAccessToken("http://a", {}, dir)).toEqual({
       token: "current-token",
       source: current,
+      expiresAt: base.expiresAt,
     });
   });
 
@@ -137,7 +139,11 @@ describe("credential store", () => {
       /No T3 token stored for http:\/\/a.*pair/,
     );
     await saveCredential(path, { origin: "http://a", accessToken: "stored", ...base });
-    expect(await resolveAccessToken("http://a", env)).toEqual({ token: "stored", source: path });
+    expect(await resolveAccessToken("http://a", env)).toEqual({
+      token: "stored",
+      source: path,
+      expiresAt: base.expiresAt,
+    });
     await saveCredential(path, {
       origin: "http://a",
       accessToken: "old",

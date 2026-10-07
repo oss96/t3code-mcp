@@ -24,6 +24,11 @@ const tokenResponseSchema = z.object({
   scope: z.string(),
 });
 export type Credential = z.infer<typeof credentialSchema>;
+export interface AccessToken {
+  token: string;
+  source: string;
+  expiresAt?: string;
+}
 type CredentialStore = z.infer<typeof credentialStoreSchema>;
 
 export const PAIR_HINT =
@@ -72,7 +77,7 @@ export async function resolveAccessToken(
   origin: string,
   env: NodeJS.ProcessEnv = process.env,
   home: string = homedir(),
-): Promise<{ token: string; source: string }> {
+): Promise<AccessToken> {
   const fromEnv = env.T3_ACCESS_TOKEN?.trim();
   if (fromEnv) {
     return { token: fromEnv, source: "T3_ACCESS_TOKEN" };
@@ -92,7 +97,7 @@ export async function resolveAccessToken(
         `The stored T3 token for ${origin} expired on ${stored.expiresAt}. ${PAIR_HINT}`,
       );
     }
-    return { token: stored.accessToken, source: path };
+    return { token: stored.accessToken, source: path, expiresAt: stored.expiresAt };
   }
   throw new Error(`No T3 token stored for ${origin}. ${PAIR_HINT}`);
 }

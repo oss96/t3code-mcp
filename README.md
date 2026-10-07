@@ -48,7 +48,7 @@ bun run src/cli.ts pair <code-or-pairing-url>
 bun run src/cli.ts status
 ```
 
-`pair` exchanges the one-time code for a 30-day bearer token and stores it in `~/.t3code-mcp/credentials.json` (mode 0600). Run `pair` again when it expires; revoke it any time in T3 → Settings → Connections (or `t3 auth session revoke`). Credentials from earlier installations are still recognized.
+`pair` exchanges the one-time code for a 30-day bearer token and stores it in `~/.t3code-mcp/credentials.json` (mode 0600). Run `pair` again when it expires or is revoked; running servers pick up the new token on their next tool call, and tool results warn during the token's last week. Revoke it any time in T3 → Settings → Connections (or `t3 auth session revoke`). Note that Connections → Revoke others revokes this pairing as well. Credentials from earlier installations are still recognized.
 
 Headless alternative: set `T3_ACCESS_TOKEN` to a token from `t3 auth session issue --token-only`.
 
