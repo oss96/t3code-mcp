@@ -124,3 +124,16 @@ export async function discoverServer(options: DiscoveryOptions = {}): Promise<Di
     `No running T3 server found. Start T3 Code, or set T3_SERVER_URL. Looked at: ${tried.join(", ")}`,
   );
 }
+
+/** The locally discovered origin of the T3 environment behind `origin`, when it differs from `origin`. */
+export async function localOriginFor(
+  origin: string,
+  options: DiscoveryOptions = {},
+): Promise<string | undefined> {
+  const local = await discoverServer(options).catch(() => null);
+  if (!local || local.origin === origin) {
+    return undefined;
+  }
+  const remote = await probeEnvironment(origin, options.fetchImpl);
+  return remote?.environmentId === local.environmentId ? local.origin : undefined;
+}

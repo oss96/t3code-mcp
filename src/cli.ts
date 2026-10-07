@@ -13,7 +13,7 @@ import {
   parsePairingInput,
   saveCredential,
 } from "./t3/credentials.ts";
-import { discoverServer } from "./t3/server-discovery.ts";
+import { discoverServer, localOriginFor } from "./t3/server-discovery.ts";
 import { T3Session } from "./t3/session.ts";
 
 const NAME = "t3code-mcp";
@@ -100,7 +100,12 @@ async function pair(input: string | undefined): Promise<void> {
   const credential = await exchangePairingCode(origin, parsed.code);
   const path = credentialsPath();
   await saveCredential(path, credential);
-  console.log(`Paired with ${origin}. Token stored in ${path} (expires ${credential.expiresAt}).`);
+  const local = await localOriginFor(origin);
+  if (local) {
+    await saveCredential(path, { ...credential, origin: local });
+  }
+  const origins = local ? `${origin} and ${local}` : origin;
+  console.log(`Paired with ${origins}. Token stored in ${path} (expires ${credential.expiresAt}).`);
 }
 
 async function status(): Promise<void> {

@@ -5,6 +5,7 @@ import { join } from "node:path";
 
 import {
   discoverServer,
+  localOriginFor,
   parseRuntimeFile,
   probeEnvironment,
   runtimeFileCandidates,
@@ -100,5 +101,33 @@ describe("discoverServer", () => {
     await expect(
       discoverServer({ env: {}, home, fetchImpl, isAlive: () => false }),
     ).rejects.toThrow(/No running T3 server found.*server-runtime\.json/);
+  });
+});
+
+const byOrigin =
+  (ids: Record<string, string>): FetchFunction =>
+  async (url: string | URL | Request) => {
+    const id = ids[new URL(url instanceof Request ? url.url : url).origin];
+    return id ? Response.json({ environmentId: id }) : new Response("nope", { status: 404 });
+  };
+
+describe("localOriginFor", () => {
+  const env = { T3_SERVER_URL: "http://127.0.0.1:3773" };
+
+  it("maps a LAN pairing origin to the local origin of the same environment", async () => {
+    const fetchImpl = byOrigin({ "http://127.0.0.1:3773": "env-1", "http://lan:3773": "env-1" });
+    expect(await localOriginFor("http://lan:3773", { env, fetchImpl })).toBe(
+      "http://127.0.0.1:3773",
+    );
+  });
+
+  it("ignores the local origin itself, other environments, and unreachable servers", async () => {
+    const fetchImpl = byOrigin({ "http://127.0.0.1:3773": "env-1", "http://other:3773": "env-2" });
+    expect(await localOriginFor("http://127.0.0.1:3773", { env, fetchImpl })).toBeUndefined();
+    expect(await localOriginFor("http://other:3773", { env, fetchImpl })).toBeUndefined();
+    expect(await localOriginFor("http://gone:3773", { env, fetchImpl })).toBeUndefined();
+    expect(
+      await localOriginFor("http://lan:3773", { env, fetchImpl: byOrigin({}) }),
+    ).toBeUndefined();
   });
 });
