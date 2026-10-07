@@ -10,11 +10,13 @@ import { connectToT3 } from "./t3/connection.ts";
 import {
   credentialsPath,
   exchangePairingCode,
+  parseIssuedSession,
   parsePairingInput,
   saveCredential,
 } from "./t3/credentials.ts";
 import { discoverServer, localOriginFor } from "./t3/server-discovery.ts";
 import { T3Session } from "./t3/session.ts";
+import { createHttpClient } from "./t3/transport/http-client.ts";
 
 const NAME = "t3code-mcp";
 const VERSION = "0.1.0";
@@ -24,6 +26,7 @@ const USAGE = `${NAME} <command> [options]
 Commands:
   serve            Run the MCP server (default command; stdio by default)
   pair <url|code>  Exchange a T3 pairing link or code for a token and store it
+  import-session   Store a token issued by \`t3 auth session issue --json\`, read from stdin
   status           Show the discovered T3 server and whether the token works
   help             Show this help
 
@@ -108,6 +111,17 @@ async function pair(input: string | undefined): Promise<void> {
   console.log(`Paired with ${origins}. Token stored in ${path} (expires ${credential.expiresAt}).`);
 }
 
+async function importSession(): Promise<void> {
+  const { origin } = await discoverServer();
+  const credential = parseIssuedSession(await Bun.stdin.text(), origin);
+  await createHttpClient(origin, credential.accessToken).get("/api/orchestration/shell");
+  const path = credentialsPath();
+  await saveCredential(path, credential);
+  console.log(
+    `Stored the issued token for ${origin} in ${path} (expires ${credential.expiresAt}).`,
+  );
+}
+
 async function status(): Promise<void> {
   const server = await discoverServer();
   console.log(
@@ -141,6 +155,9 @@ try {
       break;
     case "pair":
       await pair(args[0]);
+      break;
+    case "import-session":
+      await importSession();
       break;
     case "status":
       await status();

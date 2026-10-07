@@ -23,6 +23,11 @@ const tokenResponseSchema = z.object({
   expires_in: z.number(),
   scope: z.string(),
 });
+const issuedSessionSchema = z.object({
+  token: z.string().min(1),
+  scopes: z.array(z.string()),
+  expiresAt: z.string(),
+});
 export type Credential = z.infer<typeof credentialSchema>;
 export interface AccessToken {
   token: string;
@@ -124,6 +129,24 @@ export function parsePairingInput(
     return { code, origin: new URL(host.startsWith("//") ? `https:${host}` : host).origin };
   }
   return { code, origin: url.origin };
+}
+
+/** Builds a credential from the JSON printed by `t3 auth session issue --json`. */
+export function parseIssuedSession(text: string, origin: string, now = new Date()): Credential {
+  let json: unknown;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    throw new Error("Expected the JSON output of `t3 auth session issue --json` on stdin.");
+  }
+  const session = issuedSessionSchema.parse(json);
+  return {
+    origin,
+    accessToken: session.token,
+    scope: session.scopes.join(" "),
+    issuedAt: now.toISOString(),
+    expiresAt: session.expiresAt,
+  };
 }
 
 export async function exchangePairingCode(

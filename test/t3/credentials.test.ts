@@ -9,6 +9,7 @@ import {
   credentialsPath,
   exchangePairingCode,
   loadCredential,
+  parseIssuedSession,
   parsePairingInput,
   resolveAccessToken,
   saveCredential,
@@ -48,6 +49,32 @@ describe("parsePairingInput", () => {
   it("rejects empty input and links without a token", () => {
     expect(() => parsePairingInput(" ")).toThrow(/Enter a pairing URL/);
     expect(() => parsePairingInput("http://127.0.0.1:3773/pair")).toThrow(/missing its token/);
+  });
+});
+
+describe("parseIssuedSession", () => {
+  it("maps `t3 auth session issue --json` output to a stored credential", () => {
+    const issued = JSON.stringify({
+      sessionId: "s-1",
+      token: "issued-token",
+      method: "bearer-access-token",
+      scopes: ["orchestration:read", "orchestration:operate"],
+      expiresAt: "2027-10-07T00:00:00.000Z",
+    });
+    expect(
+      parseIssuedSession(issued, "http://127.0.0.1:3773", new Date("2026-10-07T00:00:00.000Z")),
+    ).toEqual({
+      origin: "http://127.0.0.1:3773",
+      accessToken: "issued-token",
+      scope: "orchestration:read orchestration:operate",
+      issuedAt: "2026-10-07T00:00:00.000Z",
+      expiresAt: "2027-10-07T00:00:00.000Z",
+    });
+  });
+
+  it("rejects plain tokens and incomplete JSON", () => {
+    expect(() => parseIssuedSession("bare-token", "http://a")).toThrow(/--json/);
+    expect(() => parseIssuedSession('{"token":""}', "http://a")).toThrow();
   });
 });
 

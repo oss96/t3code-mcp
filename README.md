@@ -52,6 +52,19 @@ bun run src/cli.ts status
 
 Headless alternative: set `T3_ACCESS_TOKEN` to a token from `t3 auth session issue --token-only`.
 
+Pairing tokens always last 30 days. For a longer lifetime, issue a session token with an explicit TTL and pipe its JSON into `import-session`, which checks the token against T3 before storing it:
+
+```sh
+t3 auth session issue --ttl 365d --label t3code-mcp --json \
+  --scope orchestration:read --scope orchestration:operate --scope settings:write \
+  --scope providers:manage --scope environment:maintain --scope preview:operate \
+  --scope diagnostics:read --scope terminal:read --scope terminal:operate \
+  --scope source-control:write --scope filesystem:read --scope filesystem:write --scope relay:read \
+  | bun run src/cli.ts import-session
+```
+
+The scopes match those of a pairing token; without `--scope`, T3 also grants `access:*` and `relay:write`. On the desktop app, `t3` is not on `PATH`; run it as `ELECTRON_RUN_AS_NODE=1 "/Applications/T3 Code.app/Contents/MacOS/T3 Code" "/Applications/T3 Code.app/Contents/Resources/app.asar/apps/server/dist/bin.mjs"` (adjust both paths for the Nightly build).
+
 ## Configure your MCP client
 
 ### Select a transport
@@ -231,7 +244,7 @@ Every thread result includes `url` (opens the thread in the T3 web UI) and `turn
 | `T3_ACCESS_TOKEN`        | Bearer token to use instead of the stored one                                   |
 | `T3CODE_MCP_CREDENTIALS` | Path of the credentials file. Default `~/.t3code-mcp/credentials.json`          |
 
-CLI commands: `serve` (default), `pair <url-or-code>`, `status`, `help`. Run `serve --help` for transport options.
+CLI commands: `serve` (default), `pair <url-or-code>`, `import-session`, `status`, `help`. Run `serve --help` for transport options.
 
 ## How it works
 
