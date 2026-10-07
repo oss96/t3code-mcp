@@ -38,7 +38,7 @@ Runs on Bun with selectable stdio, Streamable HTTP, or legacy HTTP/SSE for MCP c
 ## Install and pair
 
 ```bash
-git clone https://github.com/daniel100097/t3code-mcp.git
+git clone https://github.com/oss96/t3code-mcp.git
 cd t3code-mcp
 bun install
 
@@ -126,10 +126,10 @@ The SSE stream advertises `/messages?sessionId=...` as its POST endpoint; the cl
 
 ## Docker
 
-GitHub Actions builds `ghcr.io/daniel100097/t3code-mcp` for `linux/amd64` and `linux/arm64`. The image runs as the non-root `bun` user, contains only production dependencies, and defaults to stdio. All CLI commands and transport flags work in the container.
+GitHub Actions builds `ghcr.io/oss96/t3code-mcp` for `linux/amd64` and `linux/arm64`. The image runs as the non-root `bun` user, contains only production dependencies, and defaults to stdio. All CLI commands and transport flags work in the container.
 
 ```bash
-docker pull ghcr.io/daniel100097/t3code-mcp:latest
+docker pull ghcr.io/oss96/t3code-mcp:latest
 
 # Or build and check the image locally:
 docker build -t t3code-mcp:local .
@@ -148,13 +148,13 @@ docker run --rm --network host \
   -e T3_SERVER_URL=http://127.0.0.1:3773 \
   -e T3_ACCESS_TOKEN \
   -e T3CODE_MCP_HOST=127.0.0.1 \
-  ghcr.io/daniel100097/t3code-mcp:latest serve --transport http
+  ghcr.io/oss96/t3code-mcp:latest serve --transport http
 
 # Stdio: keep stdin open with -i; do not allocate a TTY with -t.
 docker run --rm -i --network host \
   -e T3_SERVER_URL=http://127.0.0.1:3773 \
   -e T3_ACCESS_TOKEN \
-  ghcr.io/daniel100097/t3code-mcp:latest serve --transport stdio
+  ghcr.io/oss96/t3code-mcp:latest serve --transport stdio
 ```
 
 For legacy SSE, change `--transport http` to `--transport sse` and connect to `http://127.0.0.1:3001/sse`.
@@ -167,7 +167,7 @@ Use Docker Desktop's host alias and publish the MCP port on loopback:
 docker run --rm -p 127.0.0.1:3001:3001 \
   -e T3_SERVER_URL=http://host.docker.internal:3773 \
   -e T3_ACCESS_TOKEN \
-  ghcr.io/daniel100097/t3code-mcp:latest serve --transport http
+  ghcr.io/oss96/t3code-mcp:latest serve --transport http
 ```
 
 The image defaults `T3CODE_MCP_HOST` to `0.0.0.0` inside the container so published ports work. With Linux host networking, explicitly use `T3CODE_MCP_HOST=127.0.0.1` as shown above to keep the MCP listener local.
@@ -181,20 +181,20 @@ docker volume create t3code-mcp-data
 docker run --rm --network host \
   -e T3_SERVER_URL=http://127.0.0.1:3773 \
   -v t3code-mcp-data:/data \
-  ghcr.io/daniel100097/t3code-mcp:latest pair <pairing-code>
+  ghcr.io/oss96/t3code-mcp:latest pair <pairing-code>
 
 docker run --rm --network host \
   -e T3_SERVER_URL=http://127.0.0.1:3773 \
   -e T3CODE_MCP_HOST=127.0.0.1 \
   -v t3code-mcp-data:/data \
-  ghcr.io/daniel100097/t3code-mcp:latest serve --transport http
+  ghcr.io/oss96/t3code-mcp:latest serve --transport http
 ```
 
 The token is stored in `/data/credentials.json`. Use the same T3 URL for pairing and serving. On Docker Desktop, apply the host alias and port mapping from the previous example.
 
 ### GitHub builds
 
-The [Docker workflow](https://github.com/daniel100097/t3code-mcp/actions/workflows/docker.yml) runs formatting, linting, type checks, and tests before building. It then checks MCP initialization and tool discovery against the production image. Pull requests build both architectures without publishing; pushes to `main`, version tags, and manual workflow runs publish to GHCR using the repository's `GITHUB_TOKEN`.
+The [Docker workflow](https://github.com/oss96/t3code-mcp/actions/workflows/docker.yml) runs formatting, linting, type checks, and tests before building. It then checks MCP initialization and tool discovery against the production image. Pull requests build both architectures without publishing; pushes to `main`, version tags, and manual workflow runs publish to GHCR using the repository's `GITHUB_TOKEN`.
 
 | Image tag               | Published from                 |
 | ----------------------- | ------------------------------ |

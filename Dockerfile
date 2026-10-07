@@ -7,7 +7,7 @@ COPY package.json bun.lock ./
 RUN bun install --frozen-lockfile --production --ignore-scripts
 
 FROM base AS runtime
-LABEL org.opencontainers.image.source="https://github.com/daniel100097/t3code-mcp" \
+LABEL org.opencontainers.image.source="https://github.com/oss96/t3code-mcp" \
       org.opencontainers.image.description="MCP server for T3 Code with stdio, Streamable HTTP, and SSE transports" \
       org.opencontainers.image.licenses="MIT"
 
