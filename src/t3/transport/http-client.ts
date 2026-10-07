@@ -1,6 +1,9 @@
 import { PAIR_HINT } from "../credentials.ts";
 import { summarizeError } from "./errors.ts";
 
+export const ORCHESTRATION_PROTOCOL_VERSION = "2";
+export const ORCHESTRATION_PROTOCOL_HEADER = "x-t3-orchestration-protocol";
+
 export type FetchFunction = (...args: Parameters<typeof fetch>) => ReturnType<typeof fetch>;
 
 export type HttpQuery = Record<string, string | number | undefined>;
@@ -25,7 +28,11 @@ export function createHttpClient(
       let response: Response;
       try {
         response = await fetchImpl(url, {
-          headers: { authorization: `Bearer ${token}`, accept: "application/json" },
+          headers: {
+            authorization: `Bearer ${token}`,
+            accept: "application/json",
+            [ORCHESTRATION_PROTOCOL_HEADER]: ORCHESTRATION_PROTOCOL_VERSION,
+          },
           signal: AbortSignal.timeout(30_000),
         });
       } catch (error) {

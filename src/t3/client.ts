@@ -33,6 +33,15 @@ export interface CreateThreadOptions extends StartTurnOptions {
   newWorktree?: NewWorktreeOptions;
 }
 
+export interface SendMessageOptions {
+  commandId: string;
+  threadId: string;
+  messageId: string;
+  text: string;
+  runtimeMode?: RuntimeMode;
+  interactionMode?: InteractionMode;
+}
+
 export interface StartTurnOptions {
   commandId: string;
   threadId: string;
@@ -121,26 +130,41 @@ export class T3Client {
     });
   }
 
-  startTurn(spec: StartTurnOptions): Promise<DispatchResult> {
+  /** Mode overrides are separate commands; the message itself goes out with the T3 UI's server-resolved delivery. */
+  async sendMessage(spec: SendMessageOptions): Promise<DispatchResult> {
+    const { commandId, threadId } = spec;
+    if (spec.runtimeMode) {
+      await this.dispatch({
+        type: "thread.runtime-mode.set",
+        commandId: `${commandId}:runtime-mode`,
+        threadId,
+        runtimeMode: spec.runtimeMode,
+      });
+    }
+    if (spec.interactionMode) {
+      await this.dispatch({
+        type: "thread.interaction-mode.set",
+        commandId: `${commandId}:interaction-mode`,
+        threadId,
+        interactionMode: spec.interactionMode,
+      });
+    }
     return this.dispatch({
-      type: "thread.turn.start",
-      commandId: spec.commandId,
-      threadId: spec.threadId,
-      message: { messageId: spec.messageId, role: "user", text: spec.text, attachments: [] },
-      runtimeMode: spec.runtimeMode,
-      interactionMode: spec.interactionMode,
-      createdAt: new Date().toISOString(),
+      type: "message.dispatch",
+      commandId,
+      threadId,
+      createdBy: "user",
+      creationSource: "mcp",
+      messageId: spec.messageId,
+      text: spec.text,
+      attachments: [],
+      deliveryIntent: "auto",
+      dispatchMode: { type: "start_immediately" },
     });
   }
 
-  interruptTurn(commandId: string, threadId: string, turnId?: string): Promise<DispatchResult> {
-    return this.dispatch({
-      type: "thread.turn.interrupt",
-      commandId,
-      threadId,
-      ...(turnId ? { turnId } : {}),
-      createdAt: new Date().toISOString(),
-    });
+  interruptTurn(commandId: string, threadId: string, runId: string): Promise<DispatchResult> {
+    return this.dispatch({ type: "run.interrupt", commandId, threadId, runId });
   }
 
   waitForTurn(

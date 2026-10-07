@@ -1,6 +1,10 @@
 import { PAIR_HINT } from "../credentials.ts";
 import { summarizeError } from "./errors.ts";
-import type { FetchFunction } from "./http-client.ts";
+import {
+  ORCHESTRATION_PROTOCOL_HEADER,
+  ORCHESTRATION_PROTOCOL_VERSION,
+  type FetchFunction,
+} from "./http-client.ts";
 import { rpcServerMessageSchema, type RpcFailure } from "./rpc-protocol.ts";
 
 interface PendingRequest {
@@ -90,6 +94,7 @@ export class RpcClient {
       url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
       url.searchParams.set("clientSurface", "web");
       url.searchParams.set("connectionMethod", "direct");
+      url.searchParams.set("orchestrationProtocol", ORCHESTRATION_PROTOCOL_VERSION);
       // Bun's WebSocket takes request headers as a (non-standard) option.
       const socket = new WebSocket(url, { headers: { authorization: `Bearer ${this.token}` } });
       this.connecting = socket;
@@ -151,7 +156,10 @@ export class RpcClient {
   private async explainHandshakeFailure(detail: string): Promise<Error> {
     try {
       const response = await this.fetchImpl(new URL("/api/orchestration/shell", this.origin), {
-        headers: { authorization: `Bearer ${this.token}` },
+        headers: {
+          authorization: `Bearer ${this.token}`,
+          [ORCHESTRATION_PROTOCOL_HEADER]: ORCHESTRATION_PROTOCOL_VERSION,
+        },
         signal: AbortSignal.timeout(5_000),
       });
       if (response.status === 401 || response.status === 403) {

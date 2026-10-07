@@ -18,6 +18,20 @@ export const projectSchema = z.object({
   workspaceRoot: z.string(),
   defaultModelSelection: modelSelectionSchema.nullable(),
 });
+export const ACTIVE_RUN_STATUSES: ReadonlySet<string> = new Set([
+  "preparing",
+  "starting",
+  "running",
+  "waiting",
+]);
+export const TERMINAL_RUN_STATUSES: ReadonlySet<string> = new Set([
+  "completed",
+  "failed",
+  "cancelled",
+  "interrupted",
+  "rolled_back",
+]);
+
 export const latestTurnSchema = z.object({
   turnId: z.string(),
   state: z.string(),
@@ -43,11 +57,6 @@ export const threadSchema = z.object({
   hasPendingUserInput: z.boolean().optional(),
   hasActionableProposedPlan: z.boolean().optional(),
 });
-export const shellSnapshotSchema = z.object({
-  snapshotSequence: z.number(),
-  projects: z.array(projectSchema),
-  threads: z.array(threadSchema),
-});
 export const messageSchema = z.object({
   id: z.string(),
   role: z.string(),
@@ -57,15 +66,121 @@ export const messageSchema = z.object({
   createdAt: z.string(),
 });
 export const threadDetailSchema = threadSchema.extend({ messages: z.array(messageSchema) });
-export const threadSnapshotSchema = z.object({
-  snapshotSequence: z.number(),
-  thread: threadDetailSchema,
+
+const threadBaseWireSchema = threadSchema.pick({
+  id: true,
+  projectId: true,
+  title: true,
+  modelSelection: true,
+  runtimeMode: true,
+  interactionMode: true,
+  branch: true,
+  worktreePath: true,
+  updatedAt: true,
+  archivedAt: true,
 });
+const shellThreadWireSchema = threadBaseWireSchema
+  .extend({
+    latestRunId: z.string().nullable(),
+    latestRunStartedAt: z.string().nullish(),
+    latestRunCompletedAt: z.string().nullish(),
+    status: z.string(),
+    lastError: z.string().nullish(),
+    pendingRuntimeRequest: z.object({ kind: z.string() }).nullable(),
+    hasActionableProposedPlan: z.boolean(),
+  })
+  .transform(
+    ({
+      latestRunId,
+      latestRunStartedAt,
+      latestRunCompletedAt,
+      status,
+      lastError,
+      pendingRuntimeRequest,
+      ...thread
+    }): Thread => ({
+      ...thread,
+      latestTurn: latestRunId
+        ? {
+            turnId: latestRunId,
+            state: status,
+            startedAt: latestRunStartedAt ?? null,
+            completedAt: latestRunCompletedAt ?? null,
+            assistantMessageId: null,
+          }
+        : null,
+      session: { status, lastError: lastError ?? null },
+      hasPendingApprovals:
+        pendingRuntimeRequest !== null && pendingRuntimeRequest.kind !== "user_input",
+      hasPendingUserInput: pendingRuntimeRequest?.kind === "user_input",
+    }),
+  );
+export const shellSnapshotSchema = z.object({
+  snapshotSequence: z.number(),
+  projects: z.array(projectSchema),
+  threads: z.array(shellThreadWireSchema),
+});
+
+const runWireSchema = z.object({
+  id: z.string(),
+  ordinal: z.number(),
+  status: z.string(),
+  startedAt: z.string().nullable(),
+  completedAt: z.string().nullable(),
+});
+const providerSessionWireSchema = z.object({
+  status: z.string(),
+  lastError: z.string().nullable(),
+  updatedAt: z.string(),
+});
+const messageWireSchema = messageSchema
+  .omit({ turnId: true })
+  .extend({ runId: z.string().nullable() })
+  .transform(({ runId, ...message }): Message => ({ ...message, turnId: runId }));
+export const threadSnapshotSchema = z
+  .object({
+    snapshotSequence: z.number(),
+    projection: z.object({
+      thread: threadBaseWireSchema,
+      runs: z.array(runWireSchema),
+      providerSessions: z.array(providerSessionWireSchema),
+      messages: z.array(messageWireSchema),
+    }),
+  })
+  .transform(({ snapshotSequence, projection }): ThreadSnapshot => {
+    const { thread, runs, providerSessions, messages } = projection;
+    const newestFirst = runs.toSorted((a, b) => b.ordinal - a.ordinal);
+    const run = newestFirst.find((r) => ACTIVE_RUN_STATUSES.has(r.status)) ?? newestFirst[0];
+    const session = providerSessions.toSorted((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
+    const reply = run
+      ? messages.toReversed().find((m) => m.role === "assistant" && m.turnId === run.id)
+      : undefined;
+    return {
+      snapshotSequence,
+      thread: {
+        ...thread,
+        latestTurn: run
+          ? {
+              turnId: run.id,
+              state: run.status,
+              startedAt: run.startedAt,
+              completedAt: run.completedAt,
+              assistantMessageId: reply?.id ?? null,
+            }
+          : null,
+        session: session ? { status: session.status, lastError: session.lastError } : null,
+        messages,
+      },
+    };
+  });
 
 export type Project = z.infer<typeof projectSchema>;
 export type LatestTurn = z.infer<typeof latestTurnSchema>;
 export type Thread = z.infer<typeof threadSchema>;
-export type ShellSnapshot = z.infer<typeof shellSnapshotSchema>;
+export type ShellSnapshot = z.output<typeof shellSnapshotSchema>;
 export type Message = z.infer<typeof messageSchema>;
 export type ThreadDetail = z.infer<typeof threadDetailSchema>;
-export type ThreadSnapshot = z.infer<typeof threadSnapshotSchema>;
+export interface ThreadSnapshot {
+  snapshotSequence: number;
+  thread: ThreadDetail;
+}

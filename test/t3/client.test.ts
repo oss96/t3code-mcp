@@ -43,6 +43,29 @@ const snapshot = (
   },
 });
 
+const wire = ({ snapshotSequence, thread }: ThreadSnapshot) => {
+  const { latestTurn, session: _session, messages, ...base } = thread;
+  return {
+    snapshotSequence,
+    projection: {
+      thread: base,
+      runs: latestTurn
+        ? [
+            {
+              id: latestTurn.turnId,
+              ordinal: 1,
+              status: latestTurn.state,
+              startedAt: latestTurn.startedAt,
+              completedAt: latestTurn.completedAt,
+            },
+          ]
+        : [],
+      providerSessions: [],
+      messages: messages.map(({ turnId, ...m }) => Object.assign(m, { runId: turnId })),
+    },
+  };
+};
+
 const turn = (turnId: string, state: string, assistantMessageId: string | null = null) => ({
   turnId,
   state,
@@ -52,9 +75,18 @@ const turn = (turnId: string, state: string, assistantMessageId: string | null =
 });
 
 describe("isTurnSettled", () => {
-  it("is false without a turn or while running, true once the reply stopped streaming", () => {
-    expect(isTurnSettled(snapshot(null, []))).toBe(false);
-    expect(isTurnSettled(snapshot(turn("A", "running"), []))).toBe(false);
+  it("treats a thread without runs as settled unless a specific message is awaited", () => {
+    expect(isTurnSettled(snapshot(null, []))).toBe(true);
+    expect(isTurnSettled(snapshot(null, []), { expectedMessageId: "u1" })).toBe(false);
+  });
+
+  it("is false until the run is terminal and the reply stopped streaming", () => {
+    for (const state of ["preparing", "queued", "starting", "running", "waiting", "future"]) {
+      expect(isTurnSettled(snapshot(turn("A", state), []))).toBe(false);
+    }
+    for (const state of ["failed", "cancelled", "interrupted", "rolled_back"]) {
+      expect(isTurnSettled(snapshot(turn("A", state), []))).toBe(true);
+    }
     expect(
       isTurnSettled(
         snapshot(turn("A", "completed", "a1"), [
@@ -134,38 +166,59 @@ function fakeConnection(
 describe("waitForTurn", () => {
   it("returns at once when already settled without opening a stream", async () => {
     const settled = snapshot(turn("A", "completed", "a1"), [message("a1", "assistant", "A")]);
-    const fake = fakeConnection([settled], []);
+    const fake = fakeConnection([wire(settled)], []);
     const result = await new T3Client(fake.conn).waitForTurn("t1", 1000);
     expect(result.timedOut).toBe(false);
     expect(fake.streams()).toBe(0);
   });
 
-  it("re-reads after a settle hint and keeps one stream open across non-terminal events", async () => {
+  it("polls the projection until the run is terminal without subscribing to events", async () => {
     const running = snapshot(turn("A", "running"), [], 1);
     const settled = snapshot(turn("A", "completed", "a1"), [message("a1", "assistant", "A")], 2);
-    const fake = fakeConnection(
-      [running, running, settled],
-      [
-        { kind: "event", event: { type: "thread.activity-appended" } },
-        { kind: "event", event: { type: "thread.message-sent" } },
-        { kind: "event", event: { type: "thread.session-set" } },
-      ],
-    );
-    const result = await new T3Client(fake.conn).waitForTurn("t1", 5000);
+    const fake = fakeConnection([wire(running), wire(running), wire(settled)], []);
+    const result = await new T3Client(fake.conn).waitForTurn("t1", 5000, { pollIntervalMs: 5 });
     expect(result.timedOut).toBe(false);
     expect(result.snapshot.thread.latestTurn?.state).toBe("completed");
-    expect(fake.streams()).toBe(1);
+    expect(fake.streams()).toBe(0);
     expect(fake.reads()).toBe(3);
   });
 
-  it("reports timedOut when no hint arrives before the deadline", async () => {
+  it("reports timedOut when the run is still active at the deadline", async () => {
     const running = snapshot(turn("A", "running"), []);
-    const fake = fakeConnection(
-      [running],
-      [{ kind: "event", event: { type: "thread.activity-appended" } }],
-    );
-    const result = await new T3Client(fake.conn).waitForTurn("t1", 120);
+    const fake = fakeConnection([wire(running)], []);
+    const result = await new T3Client(fake.conn).waitForTurn("t1", 120, { pollIntervalMs: 20 });
     expect(result.timedOut).toBe(true);
+    expect(fake.reads()).toBeGreaterThan(1);
+  });
+
+  it("tracks the active run rather than a newer queued one, and links replies by runId", async () => {
+    const base = wire(snapshot(null, []));
+    const projection = {
+      ...base.projection,
+      runs: [
+        { id: "R1", ordinal: 1, status: "running", startedAt: "s1", completedAt: null },
+        { id: "R2", ordinal: 2, status: "queued", startedAt: null, completedAt: null },
+      ],
+      providerSessions: [
+        { status: "stopped", lastError: null, updatedAt: "2026-01-01T00:00:00.000Z" },
+        { status: "running", lastError: null, updatedAt: "2026-01-02T00:00:00.000Z" },
+      ],
+      messages: [
+        { ...message("a1", "assistant", null), runId: "R1" },
+        { ...message("a2", "assistant", null), runId: "R1", streaming: true },
+      ],
+    };
+    const fake = fakeConnection([{ ...base, projection }], []);
+    const { thread } = await new T3Client(fake.conn).thread("t1");
+    expect(thread.latestTurn).toEqual({
+      turnId: "R1",
+      state: "running",
+      startedAt: "s1",
+      completedAt: null,
+      assistantMessageId: "a2",
+    });
+    expect(thread.session).toEqual({ status: "running", lastError: null });
+    expect(thread.messages.map((m) => m.turnId)).toEqual(["R1", "R1"]);
   });
 
   it("asserts the snapshot shape so contract drift fails loudly", async () => {
@@ -175,22 +228,25 @@ describe("waitForTurn", () => {
   });
 
   it("rejects malformed message fields instead of trusting their declared types", async () => {
-    const valid = snapshot(turn("A", "completed", "a1"), []);
+    const valid = wire(snapshot(turn("A", "completed", "a1"), []));
     const broken = {
       ...valid,
-      thread: {
-        ...valid.thread,
-        messages: [{ ...message("a1", "assistant", "A"), streaming: "false" }],
+      projection: {
+        ...valid.projection,
+        messages: [{ ...message("a1", "assistant", "A"), runId: "A", streaming: "false" }],
       },
     };
     const fake = fakeConnection([broken], []);
     await expect(new T3Client(fake.conn).thread("t1")).rejects.toThrow(
-      /thread.messages.0.streaming/,
+      /projection.messages.0.streaming/,
     );
   });
 
   it("accepts additional server fields and future turn states and message roles", async () => {
-    const future = { ...snapshot(turn("A", "queued"), [message("m1", "tool", "A")]), extra: true };
+    const future = {
+      ...wire(snapshot(turn("A", "queued"), [message("m1", "tool", "A")])),
+      extra: true,
+    };
     const fake = fakeConnection([future], []);
     const result = await new T3Client(fake.conn).thread("t1");
     expect(result.thread.latestTurn?.state).toBe("queued");
@@ -199,7 +255,7 @@ describe("waitForTurn", () => {
 });
 
 describe("commands", () => {
-  it("wraps thread creation in a bootstrap and follow-ups in a plain turn start", async () => {
+  it("wraps thread creation in a bootstrap", async () => {
     const fake = fakeConnection([], []);
     const api = new T3Client(fake.conn);
     await api.createThread({
@@ -235,27 +291,67 @@ describe("commands", () => {
         runSetupScript: false,
       },
     });
-    await api.startTurn({
+  });
+
+  it("sends follow-ups as protocol-2 message.dispatch with server-resolved delivery", async () => {
+    const fake = fakeConnection([], []);
+    const api = new T3Client(fake.conn);
+    await api.sendMessage({ commandId: "c2", threadId: "t1", messageId: "m2", text: "more" });
+    expect(fake.calls).toEqual([
+      {
+        tag: "orchestration.dispatchCommand",
+        payload: {
+          type: "message.dispatch",
+          commandId: "c2",
+          threadId: "t1",
+          createdBy: "user",
+          creationSource: "mcp",
+          messageId: "m2",
+          text: "more",
+          attachments: [],
+          deliveryIntent: "auto",
+          dispatchMode: { type: "start_immediately" },
+        },
+      },
+    ]);
+  });
+
+  it("sets overridden modes with their own derived command ids before dispatching", async () => {
+    const fake = fakeConnection([], []);
+    await new T3Client(fake.conn).sendMessage({
       commandId: "c2",
       threadId: "t1",
       messageId: "m2",
       text: "more",
       runtimeMode: "auto",
-      interactionMode: "default",
+      interactionMode: "plan",
     });
-    expect(fake.calls[1]?.payload).toMatchObject({
-      type: "thread.turn.start",
-      commandId: "c2",
-      message: { messageId: "m2", text: "more" },
-    });
-    expect(fake.calls[1]?.payload).not.toHaveProperty("bootstrap");
-    await api.interruptTurn("c3", "t1", "turn-1");
-    expect(fake.calls[2]?.payload).toMatchObject({
-      type: "thread.turn.interrupt",
-      commandId: "c3",
-      threadId: "t1",
-      turnId: "turn-1",
-    });
+    expect(fake.calls.map((c) => c.payload)).toEqual([
+      {
+        type: "thread.runtime-mode.set",
+        commandId: "c2:runtime-mode",
+        threadId: "t1",
+        runtimeMode: "auto",
+      },
+      {
+        type: "thread.interaction-mode.set",
+        commandId: "c2:interaction-mode",
+        threadId: "t1",
+        interactionMode: "plan",
+      },
+      expect.objectContaining({ type: "message.dispatch", commandId: "c2" }),
+    ]);
+  });
+
+  it("interrupts a run with run.interrupt", async () => {
+    const fake = fakeConnection([], []);
+    await new T3Client(fake.conn).interruptTurn("c3", "t1", "run-1");
+    expect(fake.calls).toEqual([
+      {
+        tag: "orchestration.dispatchCommand",
+        payload: { type: "run.interrupt", commandId: "c3", threadId: "t1", runId: "run-1" },
+      },
+    ]);
   });
 
   it("follows vcs.listRefs cursors until the last page", async () => {

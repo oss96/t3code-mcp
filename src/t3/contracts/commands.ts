@@ -6,7 +6,6 @@ import type { ModelSelection } from "./providers.ts";
 interface ThreadCommand {
   commandId: string;
   threadId: string;
-  createdAt: string;
 }
 
 export interface PrepareWorktree {
@@ -34,6 +33,7 @@ export interface ThreadBootstrap {
 
 export interface StartTurnCommand extends ThreadCommand {
   type: "thread.turn.start";
+  createdAt: string;
   message: {
     messageId: string;
     role: "user";
@@ -47,12 +47,38 @@ export interface StartTurnCommand extends ThreadCommand {
   bootstrap?: ThreadBootstrap;
 }
 
-export interface InterruptTurnCommand extends ThreadCommand {
-  type: "thread.turn.interrupt";
-  turnId?: string;
+export interface MessageDispatchCommand extends ThreadCommand {
+  type: "message.dispatch";
+  createdBy: "user";
+  creationSource: "mcp";
+  messageId: string;
+  text: string;
+  attachments: [];
+  deliveryIntent: "auto";
+  dispatchMode: { type: "start_immediately" };
 }
 
-export type OrchestrationCommand = StartTurnCommand | InterruptTurnCommand;
+export interface RunInterruptCommand extends ThreadCommand {
+  type: "run.interrupt";
+  runId: string;
+}
+
+export interface RuntimeModeSetCommand extends ThreadCommand {
+  type: "thread.runtime-mode.set";
+  runtimeMode: RuntimeMode;
+}
+
+export interface InteractionModeSetCommand extends ThreadCommand {
+  type: "thread.interaction-mode.set";
+  interactionMode: InteractionMode;
+}
+
+export type OrchestrationCommand =
+  | StartTurnCommand
+  | MessageDispatchCommand
+  | RunInterruptCommand
+  | RuntimeModeSetCommand
+  | InteractionModeSetCommand;
 
 export const dispatchResultSchema = z.object({ sequence: z.number() });
 export type DispatchResult = z.infer<typeof dispatchResultSchema>;

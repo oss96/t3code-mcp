@@ -369,7 +369,7 @@ describe("t3_create_thread", () => {
     const { call } = await harness({
       shell: async () => shell([thread(ids.threadId, null)]),
       config: async () => ({ providers: [provider] }),
-      startTurn: async (spec) => {
+      sendMessage: async (spec) => {
         started.push(spec);
         return { sequence: 2 };
       },
@@ -392,7 +392,7 @@ describe("t3_create_thread", () => {
     const complete = await harness({
       shell: async () => shell([thread(ids.threadId, done("A", "a1"))]),
       config: async () => ({ providers: [provider] }),
-      startTurn: async () => {
+      sendMessage: async () => {
         throw new Error("must not start a turn");
       },
       thread: async () => detail(thread(ids.threadId, done("A", "a1"))),
@@ -445,7 +445,7 @@ describe("t3_create_thread", () => {
 });
 
 describe("t3_send_message", () => {
-  it("starts a turn with the thread's modes and skips when the message already landed", async () => {
+  it("sends without mode changes by default, overrides only differing modes, and skips a landed message", async () => {
     const ids = commandIds("t1", "f1");
     const started: unknown[] = [];
     const fresh = detail(
@@ -453,7 +453,7 @@ describe("t3_send_message", () => {
     );
     const { call } = await harness({
       thread: async () => fresh,
-      startTurn: async (spec) => {
+      sendMessage: async (spec) => {
         started.push(spec);
         return { sequence: 3 };
       },
@@ -466,9 +466,18 @@ describe("t3_send_message", () => {
       commandId: ids.commandId,
       messageId: ids.messageId,
       text: "more",
-      runtimeMode: "auto",
-      interactionMode: "plan",
     });
+    expect(started[0]).not.toHaveProperty("runtimeMode");
+    expect(started[0]).not.toHaveProperty("interactionMode");
+    await call("t3_send_message", {
+      threadId: "t1",
+      prompt: "more",
+      idempotencyKey: "f2",
+      runtimeMode: "auto",
+      interactionMode: "default",
+    });
+    expect(started[1]).toMatchObject({ interactionMode: "default" });
+    expect(started[1]).not.toHaveProperty("runtimeMode");
 
     const landed = detail(thread("t1", running("B")), [
       {
@@ -482,7 +491,7 @@ describe("t3_send_message", () => {
     ]);
     const again = await harness({
       thread: async () => landed,
-      startTurn: async () => {
+      sendMessage: async () => {
         throw new Error("must not start twice");
       },
     });
@@ -493,7 +502,7 @@ describe("t3_send_message", () => {
 });
 
 describe("t3_cancel_turn and t3_wait_for_turn", () => {
-  it("is a no-op without a running turn and interrupts a running one", async () => {
+  it("is a no-op without an active run and interrupts an active one", async () => {
     const idle = await harness({ thread: async () => detail(thread("t1", done("A", "a1"))) });
     expect(await idle.call("t3_cancel_turn", { threadId: "t1" })).toMatchObject({
       cancelled: false,
@@ -517,6 +526,13 @@ describe("t3_cancel_turn and t3_wait_for_turn", () => {
       turn: { state: "interrupted" },
     });
     expect(interrupts).toEqual([{ threadId: "t1", turnId: "B" }]);
+
+    const queued = await harness({
+      thread: async () => detail(thread("t1", { ...running("C"), state: "queued" })),
+    });
+    expect(await queued.call("t3_cancel_turn", { threadId: "t1" })).toMatchObject({
+      cancelled: false,
+    });
   });
 
   it("returns the latest reply and the timeout flag when waiting", async () => {

@@ -1,12 +1,11 @@
-import * as z from "zod/v4";
-
 import type { T3Connection } from "./connection.ts";
-import type { ThreadSnapshot } from "./contracts/orchestration.ts";
+import { TERMINAL_RUN_STATUSES, type ThreadSnapshot } from "./contracts/orchestration.ts";
 import { readThreadSnapshot } from "./thread-snapshot.ts";
 
 export interface WaitForTurnOptions {
   /** Only the turn that carries this user message counts as the awaited one. */
   expectedMessageId?: string;
+  pollIntervalMs?: number;
 }
 
 export interface WaitForTurnResult {
@@ -14,21 +13,11 @@ export interface WaitForTurnResult {
   timedOut: boolean;
 }
 
-const threadEventSchema = z.object({
-  kind: z.literal("event"),
-  event: z.object({ type: z.string() }),
-});
-
-const SETTLE_HINTS = new Set([
-  "thread.session-set",
-  "thread.settled",
-  "thread.turn-interrupt-requested",
-  "thread.turn-diff-completed",
-]);
+const DEFAULT_POLL_INTERVAL_MS = 1_000;
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
-// Settlement events can precede HTTP snapshots; reread before accepting a result.
+/** Polls the thread projection until the awaited run reaches a terminal status, as T3's own wait does. */
 export async function waitForTurn(
   connection: T3Connection,
   threadId: string,
@@ -36,43 +25,23 @@ export async function waitForTurn(
   options: WaitForTurnOptions = {},
 ): Promise<WaitForTurnResult> {
   const deadline = Date.now() + timeoutMs;
+  const interval = options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
   let snapshot = await readThreadSnapshot(connection.http, threadId, 1);
-  if (isTurnSettled(snapshot, options)) {
-    return { snapshot, timedOut: false };
-  }
-  while (Date.now() < deadline) {
-    let hinted = false;
-    await connection.rpc.stream(
-      "orchestration.subscribeThread",
-      { threadId, turnLimit: 1, afterSequence: snapshot.snapshotSequence },
-      (item) => {
-        const record = threadEventSchema.safeParse(item);
-        if (!record.success || !SETTLE_HINTS.has(record.data.event.type)) {
-          return false;
-        }
-        hinted = true;
-        return true;
-      },
-      Math.max(0, deadline - Date.now()),
-    );
-    if (!hinted) {
-      break;
+  while (!isTurnSettled(snapshot, options)) {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) {
+      return { snapshot, timedOut: true };
     }
-    for (let attempt = 0; attempt < 4; attempt++) {
-      snapshot = await readThreadSnapshot(connection.http, threadId, 1);
-      if (isTurnSettled(snapshot, options)) {
-        return { snapshot, timedOut: false };
-      }
-      await sleep(150 * (attempt + 1));
-    }
+    await sleep(Math.min(interval, remaining));
+    snapshot = await readThreadSnapshot(connection.http, threadId, 1);
   }
-  return { snapshot: await readThreadSnapshot(connection.http, threadId, 1), timedOut: true };
+  return { snapshot, timedOut: false };
 }
 
 export function isTurnSettled(snapshot: ThreadSnapshot, options: WaitForTurnOptions = {}): boolean {
   const { latestTurn: turn, messages } = snapshot.thread;
   if (!turn) {
-    return false;
+    return options.expectedMessageId === undefined;
   }
   if (options.expectedMessageId) {
     const own = messages.find((m) => m.id === options.expectedMessageId);
@@ -87,7 +56,7 @@ export function isTurnSettled(snapshot: ThreadSnapshot, options: WaitForTurnOpti
       return false;
     }
   }
-  if (turn.state === "running") {
+  if (!TERMINAL_RUN_STATUSES.has(turn.state)) {
     return false;
   }
   const assistant = turn.assistantMessageId

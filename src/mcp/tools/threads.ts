@@ -116,12 +116,7 @@ export function registerThreadTools(server: McpServer, source: ClientSource): vo
         // T3's bootstrap is a chain (create thread, then start the turn). If it broke in between, the
         // thread exists without a turn: finish the launch under the same command id instead of reporting a reuse.
         if (!existing.latestTurn) {
-          await client.startTurn({
-            ...ids,
-            text,
-            runtimeMode: existing.runtimeMode,
-            interactionMode: existing.interactionMode,
-          });
+          await client.sendMessage({ ...ids, text });
         }
       } else {
         const { refs } = await client.listRefs(project.workspaceRoot);
